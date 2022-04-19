@@ -17,8 +17,8 @@ class TFIDFSpark(object):
         if not has_id:
             docs = docs.zipWithUniqueId()
 
-        doc_words = docs.flatMap(lambda (doc, doc_id): [(word, (doc_id, pos))
-                                                        for pos, word in enumerate(doc)])
+        doc_words = docs.flatMap(lambda doc_doc_id: [(word, (doc_doc_id[1], pos))
+                                                        for pos, word in enumerate(doc_doc_id[0])])
         return doc_words
 
     @classmethod
@@ -26,18 +26,18 @@ class TFIDFSpark(object):
         if not has_id:
             docs = docs.zipWithUniqueId()
 
-        doc_word_counts = docs.flatMap(lambda (doc, doc_id): [(word, (doc_id, count))
-                                                              for word, count in six.iteritems(Counter(doc))])
+        doc_word_counts = docs.flatMap(lambda doc_doc_id5: [(word, (doc_doc_id5[1], count))
+                                                              for word, count in six.iteritems(Counter(doc_doc_id5[0]))])
         return doc_word_counts
 
     @classmethod
     def doc_frequency(cls, doc_word_counts):
-        doc_frequency = doc_word_counts.map(lambda (word, (doc_id, count)): (word, 1)).reduceByKey(lambda x, y: x + y)
+        doc_frequency = doc_word_counts.map(lambda word_doc_id_count: (word_doc_id_count[0], 1)).reduceByKey(lambda x, y: x + y)
         return doc_frequency
 
     @classmethod
     def filter_min_doc_frequency(cls, doc_frequency, min_count=2):
-        return doc_frequency.filter(lambda (key, count): count >= min_count)
+        return doc_frequency.filter(lambda key_count: key_count[1] >= min_count)
 
     @classmethod
     def update_doc_frequency(cls, doc_frequency, batch_frequency):
@@ -51,7 +51,7 @@ class TFIDFSpark(object):
 
         num_partitions = doc_words.getNumPartitions()
 
-        doc_ids_word_stats = doc_words.join(doc_frequency).map(lambda (word, ((doc_id, pos), doc_frequency)): (doc_id, (word, pos, doc_frequency)))
+        doc_ids_word_stats = doc_words.join(doc_frequency).map(lambda word_doc_id_pos_doc_frequency: (word_doc_id_pos_doc_frequency[0][0], (word_doc_id_pos_doc_frequency[0], word_doc_id_pos_doc_frequency[0][1], word_doc_id_pos_doc_frequency[1][1])))
         docs_tfidf = doc_ids_word_stats.groupByKey() \
                                        .mapValues(lambda vals: [(word, TFIDF.tfidf_score(1.0, doc_frequency, total_docs)) for word, pos, doc_frequency in sorted(vals, key=operator.itemgetter(1))])
 
@@ -64,17 +64,17 @@ class GeoTFIDFSpark(TFIDFSpark, GeoWordIndexSpark):
         if not has_id:
             docs = docs.zipWithUniqueId()
 
-        docs = docs.filter(lambda ((doc, lat, lon), doc_id): lat is not None and lon is not None)
+        docs = docs.filter(lambda doc_lat_lon_doc_id6: doc_lat_lon_doc_id6[0][1] is not None and doc_lat_lon_doc_id6[0][2] is not None)
 
         if geo_aliases:
-            doc_geohashes = docs.map(lambda ((doc, lat, lon), doc_id): (cls.geohash(lat, lon, geohash_precision=geohash_precision), (doc, doc_id))) \
+            doc_geohashes = docs.map(lambda doc_lat_lon_doc_id: (cls.geohash(doc_lat_lon_doc_id[0][1], doc_lat_lon_doc_id[0][2], geohash_precision=geohash_precision), (doc_lat_lon_doc_id[0][0], doc_lat_lon_doc_id[1]))) \
                                 .leftOuterJoin(geo_aliases) \
-                                .map(lambda (geo, ((doc, doc_id), geo_alias)): (geo_alias or geo, (doc, doc_id)))
+                                .map(lambda geo_doc_doc_id_geo_alias: (geo_doc_doc_id_geo_alias[1][1] or geo_doc_doc_id_geo_alias[0], (geo_doc_doc_id_geo_alias[0][0], geo_doc_doc_id_geo_alias[0][1])))
         else:
-            doc_geohashes = docs.map(lambda ((doc, lat, lon), doc_id): (cls.geohash(lat, lon, geohash_precision=geohash_precision), (doc, doc_id)))
+            doc_geohashes = docs.map(lambda doc_lat_lon_doc_id1: (cls.geohash(doc_lat_lon_doc_id1[0][1], doc_lat_lon_doc_id1[0][2], geohash_precision=geohash_precision), (doc_lat_lon_doc_id1[0][0], doc_lat_lon_doc_id1[1])))
 
-        doc_words = doc_geohashes.flatMap(lambda (geo, (doc, doc_id)): [((geo, word), (doc_id, pos))
-                                                                        for pos, word in enumerate(doc)])
+        doc_words = doc_geohashes.flatMap(lambda geo_doc_doc_id: [((geo_doc_doc_id[0], word), (geo_doc_doc_id[1][1], pos))
+                                                                        for pos, word in enumerate(geo_doc_doc_id[1][0])])
         return doc_words
 
     @classmethod
@@ -82,31 +82,31 @@ class GeoTFIDFSpark(TFIDFSpark, GeoWordIndexSpark):
         if not has_id:
             docs = docs.zipWithUniqueId()
 
-        docs = docs.filter(lambda ((doc, lat, lon), doc_id): lat is not None and lon is not None)
+        docs = docs.filter(lambda doc_lat_lon_doc_id7: doc_lat_lon_doc_id7[0][1] is not None and doc_lat_lon_doc_id7[0][2] is not None)
 
         if geo_aliases:
-            doc_geohashes = docs.flatMap(lambda ((doc, lat, lon), doc_id): [(gh, (doc, doc_id)) for gh in cls.geohashes(lat, lon)]) \
+            doc_geohashes = docs.flatMap(lambda doc_lat_lon_doc_id2: [(gh, (doc_lat_lon_doc_id2[0][0], doc_lat_lon_doc_id2[1])) for gh in cls.geohashes(doc_lat_lon_doc_id2[0][1], doc_lat_lon_doc_id2[0][2])]) \
                                 .leftOuterJoin(geo_aliases) \
-                                .map(lambda (geo, ((doc, doc_id), geo_alias)): (geo_alias or geo, (doc, doc_id)))
+                                .map(lambda geo_doc_doc_id_geo_alias3: (geo_doc_doc_id_geo_alias3[1][1] or geo_doc_doc_id_geo_alias3[0], (geo_doc_doc_id_geo_alias3[0][0], geo_doc_doc_id_geo_alias3[0][1])))
         else:
-            doc_geohashes = docs.flatMap(lambda ((doc, lat, lon), doc_id): [(gh, (doc, doc_id)) for gh in cls.geohashes(lat, lon)])
+            doc_geohashes = docs.flatMap(lambda doc_lat_lon_doc_id4: [(gh, (doc_lat_lon_doc_id4[0][0], doc_lat_lon_doc_id4[1])) for gh in cls.geohashes(doc_lat_lon_doc_id4[0][1], doc_lat_lon_doc_id4[0][2])])
 
-        doc_word_counts = doc_geohashes.flatMap(lambda (geo, (doc, doc_id)): [((geo, word), (doc_id, count))
-                                                                              for word, count in six.iteritems(Counter(doc))])
+        doc_word_counts = doc_geohashes.flatMap(lambda geo_doc_doc_id8: [((geo_doc_doc_id8[0], word), (geo_doc_doc_id8[1][1], count))
+                                                                              for word, count in six.iteritems(Counter(geo_doc_doc_id8[1][0]))])
         return doc_word_counts
 
     @classmethod
     def filter_min_doc_frequency(cls, doc_frequency, min_count=2):
-        return doc_frequency.filter(lambda (key, count): count >= min_count)
+        return doc_frequency.filter(lambda key_count9: key_count9[1] >= min_count)
 
     @classmethod
     def total_docs_by_geo(cls, docs, has_id=False, geohash_precision=GeoWordIndexSpark.DEFAULT_GEOHASH_PRECISION):
         if not has_id:
             docs = docs.zipWithUniqueId()
 
-        docs = docs.filter(lambda ((doc, lat, lon), doc_id): lat is not None and lon is not None)
+        docs = docs.filter(lambda doc_lat_lon_doc_id10: doc_lat_lon_doc_id10[0][1] is not None and doc_lat_lon_doc_id10[0][2] is not None)
 
-        total_docs_by_geo = docs.flatMap(lambda ((doc, lat, lon), doc_id): [(gh, 1) for gh in cls.geohashes(lat, lon)]) \
+        total_docs_by_geo = docs.flatMap(lambda doc_lat_lon_doc_id11: [(gh, 1) for gh in cls.geohashes(doc_lat_lon_doc_id11[0][1], doc_lat_lon_doc_id11[0][2])]) \
                                 .reduceByKey(lambda x, y: x + y)
         return total_docs_by_geo
 
@@ -118,7 +118,7 @@ class GeoTFIDFSpark(TFIDFSpark, GeoWordIndexSpark):
     @classmethod
     def updated_total_docs_geo_aliases(cls, total_docs_by_geo, geo_aliases):
         batch_docs_by_geo = total_docs_by_geo.join(geo_aliases) \
-                                             .map(lambda (geo, (count, geo_alias)): (geo_alias, count)) \
+                                             .map(lambda geo_count_geo_alias: (geo_count_geo_alias[1][1], geo_count_geo_alias[1][0])) \
                                              .reduceByKey(lambda x, y: x + y)
 
         return cls.update_total_docs_by_geo(total_docs_by_geo, batch_docs_by_geo) \
@@ -131,11 +131,11 @@ class GeoTFIDFSpark(TFIDFSpark, GeoWordIndexSpark):
 
         num_partitions = doc_words.getNumPartitions()
 
-        geo_doc_frequency_totals = geo_doc_frequency.map(lambda ((geo, word), count): (geo, (word, count))) \
+        geo_doc_frequency_totals = geo_doc_frequency.map(lambda geo_word_count: (geo_word_count[0][0], (geo_word_count[0][1], geo_word_count[1]))) \
                                                     .join(total_docs_by_geo) \
-                                                    .map(lambda (geo, ((word, count), num_docs)): ((geo, word), (count, num_docs)))
+                                                    .map(lambda geo_word_count_num_docs: ((geo_word_count_num_docs[0], geo_word_count_num_docs[0][0]), (geo_word_count_num_docs[0][1], geo_word_count_num_docs[1][1])))
         doc_ids_word_stats = doc_words.join(geo_doc_frequency_totals) \
-                                      .map(lambda ((geo, word), ((doc_id, pos), (doc_frequency, num_docs))): (doc_id, (word, pos, doc_frequency, num_docs)))
+                                      .map(lambda geo_word_doc_id_pos_doc_frequency_num_docs: (geo_word_doc_id_pos_doc_frequency_num_docs[0][0], (geo_word_doc_id_pos_doc_frequency_num_docs[0][1], geo_word_doc_id_pos_doc_frequency_num_docs[0][1], geo_word_doc_id_pos_doc_frequency_num_docs[1][0], geo_word_doc_id_pos_doc_frequency_num_docs[1][1])))
 
         docs_tfidf = doc_ids_word_stats.groupByKey() \
                                        .mapValues(lambda vals: [(word, TFIDF.tfidf_score(1.0, doc_frequency, num_docs)) for word, pos, doc_frequency, num_docs in sorted(vals, key=operator.itemgetter(1))])
@@ -144,5 +144,5 @@ class GeoTFIDFSpark(TFIDFSpark, GeoWordIndexSpark):
 
     @classmethod
     def save(cls, word_info_gain, index_path):
-        word_info_gain.map(lambda ((geo, word), val): u'\t'.join([geo, word, val])) \
+        word_info_gain.map(lambda geo_word_val: '\t'.join([geo_word_val[0][0], geo_word_val[0][1], geo_word_val[1]])) \
                       .saveAsTextFile(index_path)
